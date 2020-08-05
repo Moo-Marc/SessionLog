@@ -13,3 +13,10 @@ To do:
 2. Fix continuous high CPU usage.
 3. Change hard coded default paths to be editable through the GUI or "last used path" remembered.
 4. Clean-up old files from the Elekta version which are no longer necessary.
+
+# License
+This code is provided under the GNU LGPL 3.0 license.  See file LICENSE
+
+JSch is Copyright (c) 2002-2015 Atsuhiko Yamanaka, JCraft,Inc.
+See file JSch_LICENSE.txt
+
