@@ -13,6 +13,11 @@ import java.io.*;
 import java.util.ArrayList;
 import javax.swing.*;
 import runnable.viewFileRunnable;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import runnable.TerminalCommandRunnable;
 
 /**
  *
@@ -149,6 +154,10 @@ public class NotesPanel extends JPanel{
     
     public JButton getUpdateNotesButton() {
         return(updateNotesButton);
+    }
+    
+    public void addTextNotes(String notes) {
+        textArea.append(notes);
     }
     
     public void clearNotesArea(){
@@ -310,6 +319,25 @@ public class NotesPanel extends JPanel{
                 return false;
             }
     } // saveAs
+    
+    public boolean writeBackup(){
+        // make a backup of the notes file
+        String command = "touch "+DataSetPaths.currentSessionLog+".bak";
+        // run the command from a terminal window
+        Runnable r = new TerminalCommandRunnable(command);
+        Thread cr = new Thread(r);
+        cr.setName("touch");
+        cr.start();
+        
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException ex) {
+            Logger.getLogger(Notepad.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+        File txtFile = new File(DataSetPaths.currentSessionLog+".bak");
+        return writeFile (txtFile, textArea.getText ());
+    }
 
     public void openSelectedFile(String viewFile){
        try{
@@ -334,9 +362,15 @@ public class NotesPanel extends JPanel{
 
         // If sessionLog.txt does not exist, saveAs
         else{
-            int option = JOptionPane.showConfirmDialog(this,"Do you want to save the changes ??");
-            if (option == 0){
-                    saveAs();
+            String str = textArea.getText();
+            if("".equals(str)){
+                //exit now
+            } 
+            else {
+                int option = JOptionPane.showConfirmDialog(this,"Do you want to save the changes ??");
+                if (option == 0){
+                        saveAs();
+                }   
             }
         }
     }
@@ -346,23 +380,42 @@ public class NotesPanel extends JPanel{
         String temp[];
         String delimiter = "\\.";
         String text = textArea.getText();
+        String tt = DateUtils.getCurrentTime();
+        
         // List all datasets
         ArrayList<String> ds = DataSetPaths.currentDataSets;
+        // Check subjID
         for (int i=0; i<ds.size(); i++){
             dataset = ds.get(i);
             int ind = text.indexOf(dataset);
             int aux = dataset.indexOf("AUX");
+            int idmatch = dataset.indexOf(DataSetPaths.subjID);
             // check if dataset is already reported in the notes
-            if (ind == -1 && aux == -1){                
-                textArea.insert("\n----------------------------------------\n",textArea.getDocument().getLength());
-                textArea.insert("*** " +  DateUtils.getCurrentTime() + " ***" + "\n", textArea.getDocument().getLength());
-                textArea.insert(dataset+"\n",textArea.getDocument().getLength());
-                // check for matching AUX file and put these together
-                temp = dataset.split(delimiter);
-                String auxName = temp[0]+"_AUX.ds";
-                if (ds.indexOf(auxName) > -1){
-                    // thre is an AUX file
-                    textArea.insert(auxName+"\n",textArea.getDocument().getLength());
+            if (ind == -1 && aux == -1){ 
+                if (idmatch != -1){ 
+                    // find the time
+                    File file = new File(DataSetPaths.currentDataPath + File.separator + dataset);
+                    String[] names = file.list();
+                    for(String name : names)
+                    {
+                        File hzfile = new File(DataSetPaths.currentDataPath + File.separator + dataset + File.separator + name);
+                        if (hzfile.isDirectory())
+                        {
+                            SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yyyy HH:mm:ss");
+                            tt = sdf.format(file.lastModified());
+                        }
+                    }
+                    textArea.insert("\n----------------------------------------\n",textArea.getDocument().getLength());
+                    textArea.insert("*** " +  tt + " ***" + "\n", textArea.getDocument().getLength());
+                    textArea.insert(dataset+"\n",textArea.getDocument().getLength());
+                    // check for matching AUX file and put these together
+                    temp = dataset.split(delimiter);
+                    String auxName = temp[0]+"_AUX.ds";
+                    if (ds.indexOf(auxName) > -1){
+                        // thre is an AUX file
+                        textArea.insert(auxName+"\n",textArea.getDocument().getLength());
+                    }
+                    
                 }
 
             }

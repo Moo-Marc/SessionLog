@@ -1,14 +1,25 @@
 #!/bin/bash
-#Usage: process.sh datePath posFile
+#Usage: subjID process.sh datePath posFile
 
-datePath=$1
-posFile=$2
+subjID=$1
+datePath=$2
+posFile=$3
 DsFiles=$(ls -d $datePath/*.ds)
 
 #Update EEG info for each of the .ds folders
 for f in $DsFiles
 do
-	changeeeginfo -f $posFile $f >> $datePath/updateEEG.log 2>&1	
+	changeeeginfo -f $posFile $f >> $datePath/${subjID}_updateEEG.log 2>&1	
 done
 
-cp $posFile $datePath	
+# if the pos file does not have a matching subject ID, 
+# then prepend the ID while copying		
+posName=$(echo $(basename $posFile))		
+if [[ $posName == ${subjID}_* ]] ; then		
+	echo "copying $posFile to $datePath"		
+	cp $posFile $datePath
+		
+else			
+	echo "copying $posFile to ${datePath}/${subjID}_$posName"		
+	cp $posFile ${datePath}/${subjID}_$posName
+fi

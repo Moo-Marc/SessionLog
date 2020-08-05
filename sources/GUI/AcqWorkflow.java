@@ -18,6 +18,7 @@ import javax.swing.*;
  */
 public class AcqWorkflow extends JPanel{
     private final JTextField subjName;
+    private final JButton newSubj;
     private final JTextArea picNames;
     private File[] picFiles;
     private final JButton selectPIC;
@@ -38,9 +39,16 @@ public class AcqWorkflow extends JPanel{
         Font buttonFont = new Font("sansserif",Font.PLAIN,10);
         Dimension buttonDim = new Dimension(100, 15);
         // workflow tasks
-        JLabel subjLabel = new JLabel("Subject ID");
+        JLabel subjLabel = new JLabel("Recording ID");
         subjName = new JTextField("");
-        
+        subjName.setAlignmentX(Component.LEFT_ALIGNMENT);
+        subjName.setMaximumSize(new Dimension(400,25));
+        newSubj = new JButton("New Subject");
+        newSubj.setFont(buttonFont);
+        newSubj.setPreferredSize(buttonDim);
+        newSubj.setAlignmentX(Component.LEFT_ALIGNMENT);
+        newSubj.setToolTipText("Open a SessionLog for a new subject");
+                
         JLabel picLabel = new JLabel("Coil Location Photos:");
         picNames = new JTextArea("");
         picNames.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -118,6 +126,8 @@ public class AcqWorkflow extends JPanel{
         // add workflow buttons
         add(subjLabel);
         add(subjName);
+        add(newSubj);
+        add(Box.createVerticalStrut(20));
         add(picLabel);
         add(picScroll);
         add(selectPIC);
@@ -143,6 +153,14 @@ public class AcqWorkflow extends JPanel{
     
     public String getSubjName(){
         return(subjName.getText());
+    }
+    
+    public JButton getNewSubjButton(){
+        return(newSubj);
+    }
+    
+    public void setSubjName(String name){
+        subjName.setText(name);
     }
     
     public String getPicFileNames(){

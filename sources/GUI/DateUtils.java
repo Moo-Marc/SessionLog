@@ -29,6 +29,14 @@ public class DateUtils {
     return sdf.format(cal.getTime());
   }
   
+  public static String getStartTimeOfDay(String format) {
+    Calendar cal = Calendar.getInstance();
+    SimpleDateFormat sdf = new SimpleDateFormat(format);
+    cal.set(Calendar.HOUR_OF_DAY, 0);
+    cal.set(Calendar.MINUTE, 0);
+    cal.set(Calendar.SECOND, 0);
+    return sdf.format(cal.getTime()); 
+  }
   public static Long getDateLong(int hour, int minute){
     // TODO this does not work
     Long time;

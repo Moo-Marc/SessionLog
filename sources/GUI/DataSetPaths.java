@@ -26,6 +26,7 @@ public class DataSetPaths {
     public static String picFilePath;
     public static String userAppLogPath;
     public static ArrayList<String> currentDataSets;
+    public static String subjID;
         
     public static void init() {
         String acqPath;
@@ -34,24 +35,23 @@ public class DataSetPaths {
         
         // get current user and date paths
         date = DateUtils.getDateFolder();
-        user = System.getProperty("user.home");
+        //user = System.getProperty("user.home");
+        user = System.getProperty("user.name");
         
         // set default paths
-        if (user.equals("C:\\Users\\Beth")){
-            acqPath = "D:\\MEG_data\\timing_tests\\20111213";
-        }else {
-            acqPath = user + File.separator + "MEG_data" +File.separator + date;
-        }    
+        acqPath = "/exportctfmeg/data/" + user + File.separator + "ACQ_Data" + File.separator + date;
+            
         currentDataPath = acqPath;
         acqDatabase = acqPath;
-        currentSessionLog = acqPath + File.separator + "sessionLog_" + date + "_01.txt";
-        posFilePath = "/POS_files";
-        picFilePath = "/misc/usb/dcim";
+        //currentSessionLog = acqPath + File.separator + "sessionLog_" + date + "_01.txt";
+        currentSessionLog = new String();
+        posFilePath = "/exportctfmeg/Pos_Files";
+        picFilePath = "/media"; // /media/ECBD_C079/DCIM didn't work.
         
         helpFileName = "sessionlog_help.txt";
         
-        userAppLogPath = user + File.separator + ".sessionLog";
-       
+        userAppLogPath = "/exportctfmeg/data/" + user + File.separator + ".sessionLog";
+        
         currentDataSets = new ArrayList<String>();
     }
 }

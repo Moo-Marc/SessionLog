@@ -7,6 +7,7 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.PrintWriter;
+import java.text.ParseException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.*;
@@ -30,7 +31,7 @@ class Notepad extends JFrame{
 
     public int runNumber;
 
-    public Notepad() {        
+    public Notepad() throws ParseException, ParseException {        
         /* Initialize all components */
         runNumber = 0;
         statusUtils = new StatusUtils();
@@ -83,7 +84,18 @@ class Notepad extends JFrame{
     }
     
     private void createSessionFile(){
-        File dateFolder = new File(DataSetPaths.currentDataPath);
+        // Ask for subject name
+        String subjid = JOptionPane.showInputDialog(notesPanel, "Enter Recording ID:\nIMPORTANT: Use SAME ID for acquisition\nand headshape file",
+                "Recording ID", JOptionPane.QUESTION_MESSAGE);
+        if(subjid == null || (subjid != null && ("".equals(subjid))))
+        {
+            exit();
+        }
+        workflowPanel.setSubjName(subjid);
+        DataSetPaths.subjID = subjid;
+        String date = DateUtils.getDateFolder();
+        DataSetPaths.currentSessionLog = DataSetPaths.currentDataPath + File.separator + subjid + "_sessionLog_" + date + "_01.log";
+        
         /* Search for existing sessionLog.txt for this date */
         File sessionLog = new File(DataSetPaths.currentSessionLog);
         if (!sessionLog.exists()){
@@ -93,6 +105,11 @@ class Notepad extends JFrame{
             Thread cr = new Thread(r);
             cr.setName("touch");
             cr.start();
+        }else {
+            JButton load = dataTreePanel.getLoadTextButton();
+            load.doClick();
+            JButton update = notesPanel.getUpdateNotesButton();
+            update.doClick();
         }
         // wait for thread to finish
         try {
@@ -100,7 +117,8 @@ class Notepad extends JFrame{
         } catch (InterruptedException ex) {
             Logger.getLogger(Notepad.class.getName()).log(Level.SEVERE, null, ex);
         }
-        // search for most recent and load this one
+        
+        /* search for most recent and load this one
         SessionFilter filter = new SessionFilter("sessionLog");
         File[] sessionFiles = dateFolder.listFiles(filter);
         long lastMod = sessionFiles[0].lastModified();
@@ -108,7 +126,7 @@ class Notepad extends JFrame{
             if (sessionFiles[ii].lastModified() >= lastMod){
                 DataSetPaths.currentSessionLog = sessionFiles[ii].getPath();
             }
-        }
+        }*/
     }
     
     public DataTreePanel getDataTreePanel(){
@@ -119,7 +137,7 @@ class Notepad extends JFrame{
         return (notesPanel);
     }
     
-    public void newRecordActionPerformed(){
+    public void newRecordActionPerformed() throws ParseException{
         // Clear textArea
         notesPanel.reset();
 
@@ -203,7 +221,11 @@ class Notepad extends JFrame{
         newRecordMenuItem.addActionListener(new ActionListener() {
             @Override
                 public void actionPerformed(ActionEvent e) {
+                try {
                     newRecordActionPerformed();
+                } catch (ParseException ex) {
+                    Logger.getLogger(Notepad.class.getName()).log(Level.SEVERE, null, ex);
+                }
                 }
         });
         // Exit - Menu Item
@@ -271,7 +293,7 @@ class Notepad extends JFrame{
         contentPane = getContentPane(); 
 
         //Add tool bar
-        contentPane.add(toolBar, BorderLayout.NORTH);
+        //contentPane.add(toolBar, BorderLayout.NORTH);
         
         // Add main text area
         notesPanel = new NotesPanel();
@@ -291,7 +313,19 @@ class Notepad extends JFrame{
         JTextArea textArea = statusPanel.getStatusArea();
         LogUtils.setStatusArea(textArea);
         
-        /*  add callbacks */
+        /*************** Add Callback ***************************************/
+        JButton newSubject = workflowPanel.getNewSubjButton();
+        newSubject.addActionListener(new ActionListener(){
+            @Override
+            public void actionPerformed(ActionEvent e){
+                notesPanel.save(); //save notes area
+                notesPanel.reset(); // clear notes area
+                statusPanel.reset(); // clear status panel
+                createSessionFile(); // create new
+                setNewTitle("SessionLog: " + DataSetPaths.currentSessionLog );
+            }
+        });
+        
         JButton load = dataTreePanel.getLoadTextButton();
         load.addActionListener(new ActionListener(){
             @Override
@@ -300,6 +334,8 @@ class Notepad extends JFrame{
                 setNewTitle("SessionLog: " + DataSetPaths.currentSessionLog );
             }
         });
+        load.doClick();
+        
         JButton updateEEG = workflowPanel.getUpdateEEGButton();
         updateEEG.addActionListener(new ActionListener(){
             @Override
@@ -326,31 +362,57 @@ class Notepad extends JFrame{
     }
 
     public void exit(){
+        //JFrame frame;
         notesPanel.exit();
         // check for upload still running
         int nThreads = Thread.activeCount();
         Thread[] tarray = new Thread[nThreads];
         Thread.enumerate(tarray);
         String name;
+        
+        /* show exit status
+        frame = new JFrame("Saving");
+        frame.setLocationRelativeTo(this);
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        JProgressBar jProgressBar = new JProgressBar(JProgressBar.HORIZONTAL);
+        jProgressBar.setStringPainted(true);
+        jProgressBar.setIndeterminate(true);
+
+        frame.add(jProgressBar, BorderLayout.CENTER);
+        frame.setSize(300, 60);
+        frame.setVisible(true);*/
+        
+        // wait for thread to finish
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException ex) {
+            Logger.getLogger(Notepad.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+        //frame.setVisible(false);
+        
         for (int ii=0; ii<nThreads; ii++){
             name = tarray[ii].getName();
-            if (name.equals("rsync")){
+            if (name.equals("acqComplete")){
                 return;
             }                
         }
-        // upload process not found, exit
+        // acquisition complete, exit
         System.exit(0);
     }
 
     public void acqCompleteButtonActionPerformed(java.awt.event.ActionEvent e){
         LogUtils.writeToLog("Acquisition Complete");
         statusUtils.setAcquisitionComplete(true);
-        
-        
+
         boolean k = notesPanel.save();  //save the text area
         if (k){
             LogUtils.writeToLog("Saved text area.");
-        }
+        }   
+        k = notesPanel.writeBackup();
+        if (k){
+            LogUtils.writeToLog("Saved backup file.");
+        } 
         
         // confirm pos file exists
         String posName = DataSetPaths.posFilePath+File.separator+workflowPanel.getPosFileName();
@@ -377,6 +439,10 @@ class Notepad extends JFrame{
         // Get the picture files if available
         String picText = workflowPanel.getPicFileNames();
         String subjName = workflowPanel.getSubjName();
+        if ("".equals(subjName)){
+            JOptionPane.showMessageDialog(this, "You must enter a Subject ID", "Subject ID", 0);
+            return;
+        }
         
         // update end recording time
         logoutText.setText(DateUtils.getCurrentTime("HH:mm"));
@@ -391,12 +457,7 @@ class Notepad extends JFrame{
         cr.setName("acqComplete");
         cr.start();
         
-        // clear the notes area to start over
-        notesPanel.clearNotesArea();
-        k = notesPanel.save();  //save the text area
-        if (k){
-            LogUtils.writeToLog("Saved text area.");
-        }
+        this.exit();
     }
     
     public void updateEEGPositionCallback(){
@@ -444,7 +505,7 @@ class Notepad extends JFrame{
     public void updateBioSigNamesCallback(){
         // create the bio sig file
         String text = workflowPanel.getBioSigText();
-        String bioSigFile = DataSetPaths.currentDataPath + "/biosignals.txt";
+        String bioSigFile = DataSetPaths.currentDataPath + "/biosignals.log";
         try{
             PrintWriter out = new PrintWriter (new BufferedWriter(new FileWriter(bioSigFile, false)));
             out.print(text);
@@ -479,7 +540,12 @@ class Notepad extends JFrame{
                 GraphicsDevice[] gs = ge.getScreenDevices();
 
                 // Start the sessionlog
-                Notepad frame = new Notepad();
+                Notepad frame = null;
+                try {
+                    frame = new Notepad();
+                } catch (ParseException ex) {
+                    Logger.getLogger(Notepad.class.getName()).log(Level.SEVERE, null, ex);
+                }
                 Toolkit tk = Toolkit.getDefaultToolkit();
                 Dimension d = tk.getScreenSize();
                 int h = d.height/10;

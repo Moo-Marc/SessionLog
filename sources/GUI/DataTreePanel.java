@@ -12,7 +12,14 @@ import java.awt.event.ActionListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.io.*;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.swing.*;
 import javax.swing.event.TreeModelEvent;
 import javax.swing.event.TreeModelListener;
@@ -40,6 +47,7 @@ public class DataTreePanel extends JPanel{
     private JMenuItem locateFileMenuItem;
     private JMenuItem openEditorMenuItem;
     private JMenuItem openAveragerMenuItem;
+    private JMenuItem addAnnotMenuItem;
     private JMenuItem loadLogMenuItem;
     public JButton loadTextButton;
     public ArrayList<String> dataSets;
@@ -53,6 +61,7 @@ public class DataTreePanel extends JPanel{
         locateFileMenuItem = new JMenuItem();
         openEditorMenuItem = new JMenuItem();
         openAveragerMenuItem = new JMenuItem();
+        addAnnotMenuItem = new JMenuItem();
         loadLogMenuItem = new JMenuItem();
         patientFileTree = new JTree();
         selectedNode = new DefaultMutableTreeNode();
@@ -95,6 +104,17 @@ public class DataTreePanel extends JPanel{
             }
         });
         treePopUp.add(openAveragerMenuItem);
+               
+        treePopUp.add(new JSeparator());
+        // menu item for annotating a file in the notes panel
+        addAnnotMenuItem.setText("Add file name to notes panel");
+        addAnnotMenuItem.addActionListener(new java.awt.event.ActionListener() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+               addAnnotMenuItemActionPerformed(evt);
+            }
+        });
+        treePopUp.add(addAnnotMenuItem);
                
         treePopUp.add(new JSeparator());
         // menu item for opening the dataset with the data editor
@@ -184,7 +204,11 @@ public class DataTreePanel extends JPanel{
         refreshTreeButton.addActionListener(new ActionListener(){
             @Override
                 public void actionPerformed(ActionEvent e){
+                try {
                     updateFileTree();
+                } catch (ParseException ex) {
+                    Logger.getLogger(DataTreePanel.class.getName()).log(Level.SEVERE, null, ex);
+                }
                     
                 }
         });
@@ -197,7 +221,11 @@ public class DataTreePanel extends JPanel{
         changeDirButton.addActionListener(new ActionListener(){
             @Override
                 public void actionPerformed(ActionEvent e){
+                try {
                     changeDirectory();
+                } catch (ParseException ex) {
+                    Logger.getLogger(DataTreePanel.class.getName()).log(Level.SEVERE, null, ex);
+                }
                     
                 }
         });
@@ -246,13 +274,15 @@ public class DataTreePanel extends JPanel{
         return(refreshTreeButton);
     }
 
-    public void updateFileTree(){
+    public void updateFileTree() throws ParseException{
         DefaultMutableTreeNode fileNode;
         DefaultMutableTreeNode folderNode;
         File[] listOfFiles;
         File[] folderNames;
+        File[] listOfSessionLogs;
         String name;
         File newFile;
+        Date referenceDate;
         
         DefaultMutableTreeNode root = (DefaultMutableTreeNode)fileTreeModel.getRoot();
 
@@ -270,21 +300,20 @@ public class DataTreePanel extends JPanel{
 
         /* List .ds folders and files in the data path */
         folderNames = selectedPath.listFiles();
-        
         if (folderNames.length > 0){
-            for (int i=0; i<folderNames.length; i++){
-                name = folderNames[i].getName();
+            for (File folderName : folderNames) {
+                name = folderName.getName();
                 // add ds names to current list of datasets
-                if (name.endsWith("ds")){
+                if (name.endsWith("ds") ){
                     dataSets.add(name);
                 }
                 folderNode = new DefaultMutableTreeNode(name);
                 addFileTreeNode(folderNode, null);
                 // find and create nodes for the files in the folder
-                listOfFiles = folderNames[i].listFiles();
+                listOfFiles = folderName.listFiles();
                 if (listOfFiles != null){
-                    for (int ii=0; ii<listOfFiles.length; ii++){
-                        newFile = listOfFiles[ii];
+                    for (File listOfFile : listOfFiles) {
+                        newFile = listOfFile;
                         name = newFile.getName();
                         if(newFile.isFile()){
                             // create a tree node for this file
@@ -356,7 +385,7 @@ public class DataTreePanel extends JPanel{
         }
     }
 
-    public void changeDirectory(){
+    public void changeDirectory() throws ParseException{
         // open a dialog box for user to choose date folder
         File fFile;
         JFileChooser fch = new JFileChooser ();
@@ -383,7 +412,7 @@ public class DataTreePanel extends JPanel{
         File[] sessionFiles = dateFolder.listFiles(filter);
         if (sessionFiles == null){
             String date = DateUtils.getDateFolder();
-            DataSetPaths.currentSessionLog = DataSetPaths.currentDataPath + File.separator + "sessionLog_" + date + "_01.txt";
+            DataSetPaths.currentSessionLog = DataSetPaths.currentDataPath + File.separator + "sessionLog_" + date + "_01.log";
             return;
         }
         
@@ -440,9 +469,22 @@ public class DataTreePanel extends JPanel{
         cr.setName("averager");
         cr.start();
     }
+    
+    private void addAnnotMenuItemActionPerformed(ActionEvent evt) {
+       // Object[] selectedFile = selectedNode.toString();
+        String fileToAdd = selectedNode.toString();
+        Notepad notepad = (Notepad) SwingUtilities.getWindowAncestor(this);
+        NotesPanel notes = notepad.getNotesPanel();
+        File file = new File(DataSetPaths.currentDataPath + File.separator + fileToAdd);
+        SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yyyy HH:mm:ss");
+        String tt = sdf.format(file.lastModified());
+        notes.addTextNotes("\n----------------------------------------\n");
+        notes.addTextNotes("*** " +  tt + " ***" + "\n");
+        notes.addTextNotes(fileToAdd+"\n");
+    }
      
     private void loadLogMenuItemActionPerformed(ActionEvent evt) {
-        // Start the Averager
+        // load a sessionlog
         Object[] selectedFile = selectedNode.getUserObjectPath();
         String fileToOpen = (String)selectedFile[0];
         for (int i=1; i<selectedFile.length; ++i){
