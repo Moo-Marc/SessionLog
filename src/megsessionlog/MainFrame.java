@@ -1,0 +1,346 @@
+package megsessionlog;
+
+import javax.swing.*;
+import javax.swing.text.BadLocationException;
+import java.awt.*;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.*;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.Instant;
+
+//import javax.swing.JFileChooser;
+public class MainFrame extends JFrame {
+
+    private final Path acqFolder;
+    private final JTextArea logArea = new JTextArea();
+    private final DefaultListModel<Path> fileListModel = new DefaultListModel<>();
+    private final JList<Path> fileList = new JList<>(fileListModel);
+    private final DatasetMonitor monitor;
+    private LogManager logManager;
+    private final Settings settings = new Settings();
+    private final String participantId;
+    private Path logFile;
+    private JButton saveAsBtn;
+
+    public MainFrame() {
+        super("Session Logger");
+
+        participantId = askParticipantId();
+        if (participantId == null || participantId.trim().isEmpty()) {
+            System.exit(0);
+        }
+
+        String user = System.getProperty("user.name");
+        String date = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        String logFilename = participantId + "_ses-" + date + "_sessionLog.log";
+        acqFolder = Paths.get("/exportctfmeg/data", user, "ACQ_Data", date);
+        logFile = acqFolder.resolve(logFilename);
+
+        try {
+            logManager = new LogManager(logArea, logFile);
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(
+                    null,
+                    "Unable to create or access log file:\n" + ex.getMessage(),
+                    "Critical Error",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            System.exit(1);
+        }
+
+        setTitle("Session Log: " + logFile.toAbsolutePath().toString());
+        monitor = new DatasetMonitor(acqFolder, participantId, logManager);
+
+        // set the callback so file list refreshes whenever scan runs
+        monitor.setOnFolderChange(this::refreshFileList);
+
+        setLayout(new BorderLayout());
+        add(createToolbar(), BorderLayout.NORTH);
+        logManager.addDirtyListener(dirty -> {
+            if (logManager.isAutoSaveFailed()) {
+                saveAsBtn.setBackground(dirty ? Color.RED : null);
+            }
+        });
+        JScrollPane logScroll = new JScrollPane(logArea);
+        JScrollPane listScroll = new JScrollPane(fileList);
+
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, logScroll, listScroll);
+        split.setDividerLocation(650); // log panel larger
+
+        add(split, BorderLayout.CENTER);
+
+        logArea.setEditable(true);  // user can type freely
+        logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        logArea.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+
+        fileList.setCellRenderer(new DefaultListCellRenderer() {
+            private final Icon fileIcon = UIManager.getIcon("FileView.fileIcon");
+            private final Icon folderIcon = UIManager.getIcon("FileView.directoryIcon");
+
+            @Override
+            public Component getListCellRendererComponent(JList<?> list,
+                    Object value,
+                    int index,
+                    boolean isSelected,
+                    boolean cellHasFocus) {
+                JLabel label = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof Path) {
+                    Path path = (Path) value;
+                    label.setText(path.getFileName().toString());
+                    label.setIcon(Files.isDirectory(acqFolder.resolve(path)) ? folderIcon : fileIcon);
+                    label.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5)); // optional padding
+                }
+                return label;
+            }
+        });
+
+        setSize(1100, 600);
+
+        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                onExit();
+            }
+        });
+
+        setLocationRelativeTo(null);
+
+        monitor.start();
+    }
+
+    private JToolBar createToolbar() {
+        JToolBar bar = new JToolBar();
+        bar.setFloatable(false);
+
+        ImageIcon cameraIcon = new ImageIcon(getClass().getResource("resources/Camera_1F4F7_color.png"));
+        ImageIcon saveIcon = new ImageIcon(getClass().getResource("resources/Floppy_1F4BE_color.png"));
+        ImageIcon settingsIcon = new ImageIcon(getClass().getResource("resources/Gear_2699_color.png"));
+        ImageIcon headIcon = new ImageIcon(getClass().getResource("resources/Sunglasses_1F60E_color.png"));
+        ImageIcon artefactIcon = new ImageIcon(getClass().getResource("resources/Tooth_1F9B7_color.png"));
+        
+
+        saveAsBtn = new JButton(
+                new ImageIcon(saveIcon.getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH))
+        );
+        saveAsBtn.setToolTipText("Save log copy");
+        saveAsBtn.addActionListener(e -> {
+            JFileChooser chooser = new JFileChooser(System.getProperty("user.home"));
+            chooser.setDialogTitle("Save Log Copy (if auto save error)");
+            chooser.setSelectedFile(logFile.toFile()); // default current log file name
+
+            int res = chooser.showSaveDialog(this);
+            if (res == JFileChooser.APPROVE_OPTION) {
+                Path newFile = chooser.getSelectedFile().toPath();
+                try {
+                    Files.write(newFile, logArea.getText().getBytes(StandardCharsets.UTF_8));
+                    if (logManager.isAutoSaveFailed()) {
+                        logManager.markClean();
+                        logFile = newFile; // update log manager or variable
+                        setTitle("Session Log: " + logFile.toAbsolutePath().toString());
+                    }
+                } catch (IOException ex) {
+                    JOptionPane.showMessageDialog(this,
+                            "Failed to save log:\n" + ex.getMessage(),
+                            "Save Error", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
+        bar.add(saveAsBtn);
+
+        // Button to insert artefact description at top of log.
+        JButton insertArtefactBtn = new JButton(
+                new ImageIcon(artefactIcon.getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH))
+        ); 
+        insertArtefactBtn.setToolTipText("Artefact description (for BIDS)");
+        insertArtefactBtn.addActionListener(e -> insertArtefactLine());
+        bar.add(insertArtefactBtn);
+
+        // Copy from camera 
+        JButton cameraBtn = new JButton(
+                new ImageIcon(cameraIcon.getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH))
+        ); 
+        cameraBtn.setToolTipText("Copy pictures");
+        cameraBtn.addActionListener(e -> copyFromFolder(settings.getCameraPath()));
+        bar.add(cameraBtn);
+
+        // Copy digitization from local folder
+        JButton copyBtn = new JButton(
+                new ImageIcon(headIcon.getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH))
+        ); 
+        copyBtn.setToolTipText("Copy digitization");
+        copyBtn.addActionListener(e -> copyFromFolder(settings.getDigitizationPath()));
+        bar.add(copyBtn);
+
+        JButton settingsBtn = new JButton(
+                new ImageIcon(settingsIcon.getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH))
+        ); 
+        settingsBtn.setToolTipText("Edit defaults");
+        settingsBtn.addActionListener(e -> openSettingsDialog());
+        bar.add(settingsBtn);
+
+        // refresh tree, though it's automatic every 5 seconds.
+        /*        JButton refresh = new JButton("Refresh");
+        refresh.addActionListener(e -> monitor.forceScan());
+        bar.add(refresh);*/
+        return bar;
+    }
+
+    private void refreshFileList() {
+        SwingUtilities.invokeLater(() -> {
+            fileListModel.clear();
+            if (Files.exists(acqFolder)) {
+                try (DirectoryStream<Path> stream = Files.newDirectoryStream(acqFolder)) {
+                    List<Path> paths = new ArrayList<>();
+                    for (Path p : stream) {
+                        paths.add(p);
+                    }
+                    paths.sort(Comparator.comparing(p -> p.getFileName().toString().toLowerCase()));
+
+                    // Add sorted paths to the model
+                    paths.forEach(fileListModel::addElement);
+                } catch (IOException ignored) {
+                }
+            }
+        });
+    }
+
+    private String askParticipantId() {
+        return JOptionPane.showInputDialog(
+                this,
+                "Enter Participant ID: \n(SAME as for MEG acquisition)",
+                "Participant",
+                JOptionPane.QUESTION_MESSAGE
+        );
+    }
+
+    private void insertArtefactLine() {
+        SwingUtilities.invokeLater(() -> {
+            String templateStart = "{ \"SubjectArtefactDescription\" : \"";
+            String templateEnd = "\" }";
+            String logText = logArea.getText();
+            int caretPos;
+
+            // Search for existing template line
+            int existingIndex = logText.indexOf(templateStart);
+            if (existingIndex >= 0) {
+                // Found existing template
+                int quoteIndex = logText.indexOf("\"", existingIndex + templateStart.length());
+                caretPos = quoteIndex; // place caret just before the closing quote
+            } else {
+                // Insert new template at top
+                String artefactTemplate = templateStart + templateEnd + System.lineSeparator();
+                logArea.setText(artefactTemplate + System.lineSeparator() + logText);
+                caretPos = templateStart.length(); // inside the quotes
+            }
+
+            // Set focus and cursor position to start typing straight away
+            logArea.requestFocusInWindow();
+            logArea.setCaretPosition(caretPos);
+
+            // Ensure it's visible
+            try {
+                logArea.scrollRectToVisible(logArea.modelToView(caretPos));
+            } catch (BadLocationException e) {
+                // ignore
+            }
+
+            // Saves automatically
+        });
+    }
+
+    private void copyFromFolder(String startFolder) {
+
+        //Path startDir = Paths.get(settings.getCameraPath());
+        Path startDir = (startFolder != null && !startFolder.isEmpty())
+                ? Paths.get(startFolder)
+                : Paths.get("/media");
+
+        JFileChooser chooser = new JFileChooser();
+        chooser.setCurrentDirectory(startDir.toFile());
+        chooser.setMultiSelectionEnabled(true);
+        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        chooser.setDialogTitle("Select camera files to copy");
+
+        int result = chooser.showOpenDialog(this);
+        if (result != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+
+        File[] files = chooser.getSelectedFiles();
+        if (files == null || files.length == 0) {
+            return;
+        }
+        for (File f : files) {
+            try {
+                Path dest = acqFolder.resolve(participantId + "_" + f.getName());
+
+                Files.copy(f.toPath(), dest,
+                        StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.COPY_ATTRIBUTES);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(
+                        this,
+                        "Failed to copy: " + f.getName(),
+                        "Copy error",
+                        JOptionPane.ERROR_MESSAGE
+                );
+            }
+        }
+
+        refreshFileList();
+
+        StringBuilder sb = new StringBuilder("Copied files: ");
+        for (int i = 0; i < files.length; i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(participantId).append("_").append(files[i].getName());
+        }
+        logManager.appendLine(sb.toString(), Instant.now());
+    }
+
+    private void openSettingsDialog() {
+        JTextField cameraField = new JTextField(settings.getCameraPath(), 40);
+        JTextField digitizationField = new JTextField(settings.getDigitizationPath(), 40);
+
+        JPanel panel = new JPanel(new GridLayout(0, 1, 5, 5));
+        panel.add(new JLabel("Camera folder:"));
+        panel.add(cameraField);
+        panel.add(new JLabel("Digitization folder:"));
+        panel.add(digitizationField);
+
+        int result = JOptionPane.showConfirmDialog(
+                this, panel, "Settings",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE
+        );
+
+        if (result == JOptionPane.OK_OPTION) {
+            settings.setCameraPath(cameraField.getText().trim());
+            settings.setDigitizationPath(digitizationField.getText().trim());
+            settings.save();
+            dispose();
+        }
+    }
+
+    private void onExit() {
+        logManager.flushAndShutdown();
+        dispose();
+        System.exit(0);
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            new MainFrame().setVisible(true);
+        });
+    }
+}
