@@ -2,6 +2,10 @@ package megsessionlog;
 
 import javax.swing.*;
 import javax.swing.text.BadLocationException;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.TableModel;
+import javax.swing.table.TableRowSorter;
 import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
@@ -9,20 +13,25 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.attribute.FileTime;
+import java.time.*;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.time.Instant;
 
 //import javax.swing.JFileChooser;
 public class MainFrame extends JFrame {
 
     private final Path acqFolder;
     private final JTextArea logArea = new JTextArea();
-    private final DefaultListModel<Path> fileListModel = new DefaultListModel<>();
-    private final JList<Path> fileList = new JList<>(fileListModel);
+    private final DefaultTableModel fileTableModel = new DefaultTableModel(
+            new String[]{"Name", "Modified"}, 0) {
+        @Override
+        public boolean isCellEditable(int row, int column) {
+            return false; // read-only
+        }
+    };
+    private final JTable fileTable = new JTable(fileTableModel);
     private final DatasetMonitor monitor;
     private LogManager logManager;
     private final Settings settings = new Settings();
@@ -61,6 +70,7 @@ public class MainFrame extends JFrame {
 
         // set the callback so file list refreshes whenever scan runs
         monitor.setOnFolderChange(this::refreshFileList);
+        fileTable.setAutoCreateRowSorter(true);
 
         setLayout(new BorderLayout());
         add(createToolbar(), BorderLayout.NORTH);
@@ -70,7 +80,7 @@ public class MainFrame extends JFrame {
             }
         });
         JScrollPane logScroll = new JScrollPane(logArea);
-        JScrollPane listScroll = new JScrollPane(fileList);
+        JScrollPane listScroll = new JScrollPane(fileTable);
 
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, logScroll, listScroll);
         split.setDividerLocation(650); // log panel larger
@@ -81,7 +91,40 @@ public class MainFrame extends JFrame {
         logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         logArea.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
-        fileList.setCellRenderer(new DefaultListCellRenderer() {
+        DateTimeFormatter timeFmt
+                = DateTimeFormatter.ofPattern("HH:mm:ss");
+        DateTimeFormatter dateTimeFmt
+                = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+        DefaultTableCellRenderer base = new DefaultTableCellRenderer();
+        fileTable.getColumnModel().getColumn(1)
+                .setCellRenderer((table, value, isSelected, hasFocus, row, col) -> {
+
+                    JLabel lbl = (JLabel) base.getTableCellRendererComponent(
+                            table, value, isSelected, hasFocus, row, col);
+                    if (value instanceof FileTime) {
+                        Instant inst = ((FileTime) value).toInstant();
+                        ZonedDateTime zdt = inst.atZone(ZoneId.systemDefault());
+
+                        if (zdt.toLocalDate().equals(LocalDate.now())) {
+                            lbl.setText(zdt.format(timeFmt));
+                        } else {
+                            lbl.setText(zdt.format(dateTimeFmt));
+                        }
+                    }
+                    return lbl;
+                });
+        fileTable.getColumnModel().getColumn(0).setPreferredWidth(330); // Name
+        fileTable.getColumnModel().getColumn(1).setPreferredWidth(120); // Modified
+        fileTable.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN);
+        TableRowSorter<TableModel> sorter
+                = (TableRowSorter<TableModel>) fileTable.getRowSorter();
+        List<RowSorter.SortKey> keys = new ArrayList<>();
+        keys.add(new RowSorter.SortKey(0, SortOrder.ASCENDING));
+        sorter.setSortKeys(keys);
+        sorter.sort();
+
+
+        /*fileList.setCellRenderer(new DefaultListCellRenderer() {
             private final Icon fileIcon = UIManager.getIcon("FileView.fileIcon");
             private final Icon folderIcon = UIManager.getIcon("FileView.directoryIcon");
 
@@ -100,8 +143,7 @@ public class MainFrame extends JFrame {
                 }
                 return label;
             }
-        });
-
+        });*/
         setSize(1100, 600);
 
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
@@ -126,7 +168,6 @@ public class MainFrame extends JFrame {
         ImageIcon settingsIcon = new ImageIcon(getClass().getResource("resources/Gear_2699_color.png"));
         ImageIcon headIcon = new ImageIcon(getClass().getResource("resources/Sunglasses_1F60E_color.png"));
         ImageIcon artefactIcon = new ImageIcon(getClass().getResource("resources/Tooth_1F9B7_color.png"));
-        
 
         saveAsBtn = new JButton(
                 new ImageIcon(saveIcon.getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH))
@@ -159,7 +200,7 @@ public class MainFrame extends JFrame {
         // Button to insert artefact description at top of log.
         JButton insertArtefactBtn = new JButton(
                 new ImageIcon(artefactIcon.getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH))
-        ); 
+        );
         insertArtefactBtn.setToolTipText("Artefact description (for BIDS)");
         insertArtefactBtn.addActionListener(e -> insertArtefactLine());
         bar.add(insertArtefactBtn);
@@ -167,7 +208,7 @@ public class MainFrame extends JFrame {
         // Copy from camera 
         JButton cameraBtn = new JButton(
                 new ImageIcon(cameraIcon.getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH))
-        ); 
+        );
         cameraBtn.setToolTipText("Copy pictures");
         cameraBtn.addActionListener(e -> copyFromFolder(settings.getCameraPath()));
         bar.add(cameraBtn);
@@ -175,14 +216,14 @@ public class MainFrame extends JFrame {
         // Copy digitization from local folder
         JButton copyBtn = new JButton(
                 new ImageIcon(headIcon.getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH))
-        ); 
+        );
         copyBtn.setToolTipText("Copy digitization");
         copyBtn.addActionListener(e -> copyFromFolder(settings.getDigitizationPath()));
         bar.add(copyBtn);
 
         JButton settingsBtn = new JButton(
                 new ImageIcon(settingsIcon.getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH))
-        ); 
+        );
         settingsBtn.setToolTipText("Edit defaults");
         settingsBtn.addActionListener(e -> openSettingsDialog());
         bar.add(settingsBtn);
@@ -196,19 +237,19 @@ public class MainFrame extends JFrame {
 
     private void refreshFileList() {
         SwingUtilities.invokeLater(() -> {
-            fileListModel.clear();
-            if (Files.exists(acqFolder)) {
-                try (DirectoryStream<Path> stream = Files.newDirectoryStream(acqFolder)) {
-                    List<Path> paths = new ArrayList<>();
-                    for (Path p : stream) {
-                        paths.add(p);
-                    }
-                    paths.sort(Comparator.comparing(p -> p.getFileName().toString().toLowerCase()));
+            if (!Files.exists(acqFolder)) {
+                return;
+            }
 
-                    // Add sorted paths to the model
-                    paths.forEach(fileListModel::addElement);
-                } catch (IOException ignored) {
+            fileTableModel.setRowCount(0); // clear
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(acqFolder)) {
+                for (Path p : stream) {
+                    fileTableModel.addRow(new Object[]{
+                        p.getFileName().toString(),
+                        Files.getLastModifiedTime(p)
+                    });
                 }
+            } catch (IOException ignored) {
             }
         });
     }
@@ -216,7 +257,7 @@ public class MainFrame extends JFrame {
     private String askParticipantId() {
         return JOptionPane.showInputDialog(
                 this,
-                "Enter Participant ID: \n(SAME as for MEG acquisition)",
+                "Enter Participant ID: \n(same as for MEG acquisition)",
                 "Participant",
                 JOptionPane.QUESTION_MESSAGE
         );
