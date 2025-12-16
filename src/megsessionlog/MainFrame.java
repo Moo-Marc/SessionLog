@@ -90,6 +90,9 @@ public class MainFrame extends JFrame {
         logArea.setEditable(true);  // user can type freely
         logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         logArea.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+        // Word wrap in log text area
+        logArea.setLineWrap(true);
+        logArea.setWrapStyleWord(true);
 
         DateTimeFormatter timeFmt
                 = DateTimeFormatter.ofPattern("HH:mm:ss");
@@ -123,27 +126,6 @@ public class MainFrame extends JFrame {
         sorter.setSortKeys(keys);
         sorter.sort();
 
-
-        /*fileList.setCellRenderer(new DefaultListCellRenderer() {
-            private final Icon fileIcon = UIManager.getIcon("FileView.fileIcon");
-            private final Icon folderIcon = UIManager.getIcon("FileView.directoryIcon");
-
-            @Override
-            public Component getListCellRendererComponent(JList<?> list,
-                    Object value,
-                    int index,
-                    boolean isSelected,
-                    boolean cellHasFocus) {
-                JLabel label = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                if (value instanceof Path) {
-                    Path path = (Path) value;
-                    label.setText(path.getFileName().toString());
-                    label.setIcon(Files.isDirectory(acqFolder.resolve(path)) ? folderIcon : fileIcon);
-                    label.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5)); // optional padding
-                }
-                return label;
-            }
-        });*/
         setSize(1100, 600);
 
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
