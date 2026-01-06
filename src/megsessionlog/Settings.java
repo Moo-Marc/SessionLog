@@ -37,21 +37,35 @@ public class Settings {
         }
     }
 
+    public String getDigitizationPath() {
+        return props.getProperty("digitization.path", "/exportctfmeg/Pos_Files");
+    }
+    public void setDigitizationPath(String path) {
+        props.setProperty("digitization.path", path);
+    }
+
     public String getCameraPath() {
         return props.getProperty("camera.path",
                 "/media/5839-08C7/DCIM/Camera");
     }
-
     public void setCameraPath(String path) {
         props.setProperty("camera.path", path);
     }
 
-    public String getDigitizationPath() {
-        return props.getProperty("digitization.path", "/exportctfmeg/Pos_Files");
+    public String getPicPath() {
+        return props.getProperty("pictures.path",
+                "/exportctfmeg/secure/encrypted");
+    }
+    public void setPicPath(String path) {
+        props.setProperty("pictures.path", path);
     }
 
-    public void setDigitizationPath(String path) {
-        props.setProperty("digitization.path", path);
+    public String getPicKey() {
+        return props.getProperty("pictures.key",
+                "F5B6CB154448C91A");
+    }
+    public void setPicKey(String path) {
+        props.setProperty("pictures.key", path);
     }
 
     public void save() {

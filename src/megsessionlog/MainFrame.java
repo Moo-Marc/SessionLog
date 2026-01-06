@@ -14,10 +14,14 @@ import java.io.IOException;
 import java.nio.file.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.attribute.FileTime;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Set;
 
 //import javax.swing.JFileChooser;
 public class MainFrame extends JFrame {
@@ -192,7 +196,7 @@ public class MainFrame extends JFrame {
                 new ImageIcon(cameraIcon.getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH))
         );
         cameraBtn.setToolTipText("Copy pictures");
-        cameraBtn.addActionListener(e -> copyFromFolder(settings.getCameraPath()));
+        cameraBtn.addActionListener(e -> copyPictures(settings.getCameraPath()));
         bar.add(cameraBtn);
 
         // Copy digitization from local folder
@@ -200,7 +204,7 @@ public class MainFrame extends JFrame {
                 new ImageIcon(headIcon.getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH))
         );
         copyBtn.setToolTipText("Copy digitization");
-        copyBtn.addActionListener(e -> copyFromFolder(settings.getDigitizationPath()));
+        copyBtn.addActionListener(e -> copyFromFolder(settings.getDigitizationPath(), false));
         bar.add(copyBtn);
 
         JButton settingsBtn = new JButton(
@@ -280,7 +284,50 @@ public class MainFrame extends JFrame {
         });
     }
 
-    private void copyFromFolder(String startFolder) {
+    private void copyPictures(String startFolder) {
+        List<Path> copiedFiles = copyFromFolder(startFolder, true);
+        // Make backup copy, encrypted for megadm only.
+        Path encryptedFolder = Paths.get(settings.getPicPath());
+        for (Path p : copiedFiles) {
+            Path destFile = encryptedFolder.resolve(p.getFileName().toString() + ".gpg");
+            try {
+                ProcessBuilder pb = new ProcessBuilder(
+                        "ionice", "-c", "2", "-n", "7", "nice", "-n", "10",
+                        "gpg", "--encrypt", "--batch", "yes", "--trust-model", "always",
+                        "--recipient", settings.getPicKey(),
+                        "--output", destFile.toString(), p.toString()
+                );
+                pb.inheritIO(); // optional: inherit stdout/stderr
+                pb.start().waitFor();
+            } catch (IOException ex) {
+                JOptionPane.showMessageDialog(null,
+                        "Failed to start encryption process: " + ex.getMessage(),
+                        "Error", JOptionPane.ERROR_MESSAGE);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt(); // restore interrupted status
+                JOptionPane.showMessageDialog(null,
+                        "Encryption was interrupted",
+                        "Error", JOptionPane.ERROR_MESSAGE);
+            }
+            // Only change permissions if the FS supports POSIX attributes
+            try {
+                if (Files.exists(destFile) && 
+                        Files.getFileStore(destFile).supportsFileAttributeView(PosixFileAttributeView.class)) {
+                    Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rw-------");
+                    Files.setPosixFilePermissions(destFile, perms);
+                }
+            } catch (IOException ex) {
+                JOptionPane.showMessageDialog(this,
+                        "Failed to set permissions: " + destFile.getFileName(),
+                        "Permission error",
+                        JOptionPane.WARNING_MESSAGE);
+            }
+        }
+    }
+
+    private List<Path> copyFromFolder(String startFolder, boolean deleteAfterCopy) {
+
+        List<Path> copiedFiles = new ArrayList<>();
 
         //Path startDir = Paths.get(settings.getCameraPath());
         Path startDir = (startFolder != null && !startFolder.isEmpty())
@@ -295,20 +342,23 @@ public class MainFrame extends JFrame {
 
         int result = chooser.showOpenDialog(this);
         if (result != JFileChooser.APPROVE_OPTION) {
-            return;
+            return copiedFiles;
         }
 
         File[] files = chooser.getSelectedFiles();
         if (files == null || files.length == 0) {
-            return;
+            return copiedFiles;
         }
         for (File f : files) {
+            Path dest = acqFolder.resolve(participantId + "_" + f.getName());
             try {
-                Path dest = acqFolder.resolve(participantId + "_" + f.getName());
-
                 Files.copy(f.toPath(), dest,
                         StandardCopyOption.REPLACE_EXISTING,
                         StandardCopyOption.COPY_ATTRIBUTES);
+                if (deleteAfterCopy) {
+                    Files.delete(f.toPath());
+                }
+                copiedFiles.add(dest);
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(
                         this,
@@ -316,6 +366,20 @@ public class MainFrame extends JFrame {
                         "Copy error",
                         JOptionPane.ERROR_MESSAGE
                 );
+            }
+
+            // Only change permissions if the FS supports POSIX attributes
+            try {
+                if (Files.exists(dest) && 
+                        Files.getFileStore(dest).supportsFileAttributeView(PosixFileAttributeView.class)) {
+                    Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rw-------");
+                    Files.setPosixFilePermissions(dest, perms);
+                }
+            } catch (IOException ex) {
+                JOptionPane.showMessageDialog(this,
+                        "Failed to set permissions: " + dest.getFileName(),
+                        "Permission error",
+                        JOptionPane.WARNING_MESSAGE);
             }
         }
 
@@ -329,17 +393,25 @@ public class MainFrame extends JFrame {
             sb.append(participantId).append("_").append(files[i].getName());
         }
         logManager.appendLine(sb.toString(), Instant.now());
+
+        return copiedFiles;
     }
 
     private void openSettingsDialog() {
-        JTextField cameraField = new JTextField(settings.getCameraPath(), 40);
         JTextField digitizationField = new JTextField(settings.getDigitizationPath(), 40);
+        JTextField cameraField = new JTextField(settings.getCameraPath(), 40);
+        JTextField picPathField = new JTextField(settings.getPicPath(), 40);
+        JTextField picKeyField = new JTextField(settings.getPicKey(), 40);
 
         JPanel panel = new JPanel(new GridLayout(0, 1, 5, 5));
-        panel.add(new JLabel("Camera folder:"));
-        panel.add(cameraField);
         panel.add(new JLabel("Digitization folder:"));
         panel.add(digitizationField);
+        panel.add(new JLabel("Camera folder:"));
+        panel.add(cameraField);
+        panel.add(new JLabel("Encrypted pictures backup folder:"));
+        panel.add(picPathField);
+        panel.add(new JLabel("Encryption key:"));
+        panel.add(picKeyField);
 
         int result = JOptionPane.showConfirmDialog(
                 this, panel, "Settings",
@@ -348,8 +420,10 @@ public class MainFrame extends JFrame {
         );
 
         if (result == JOptionPane.OK_OPTION) {
-            settings.setCameraPath(cameraField.getText().trim());
             settings.setDigitizationPath(digitizationField.getText().trim());
+            settings.setCameraPath(cameraField.getText().trim());
+            settings.setPicPath(picPathField.getText().trim());
+            settings.setPicKey(picKeyField.getText().trim());
             settings.save();
             dispose();
         }
