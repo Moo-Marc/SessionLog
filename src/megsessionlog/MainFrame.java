@@ -288,12 +288,19 @@ public class MainFrame extends JFrame {
         List<Path> copiedFiles = copyFromFolder(startFolder, true);
         // Make backup copy, encrypted for megadm only.
         Path encryptedFolder = Paths.get(settings.getPicPath());
+        if (startFolder == null || startFolder.isEmpty() || !Files.exists(encryptedFolder)) {
+            JOptionPane.showMessageDialog(null,
+                    "Encrypted pictures backup folder not found.",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
         for (Path p : copiedFiles) {
             Path destFile = encryptedFolder.resolve(p.getFileName().toString() + ".gpg");
             try {
+                // batch: non-interactively, yes: answer yes to overwrite confirmation prompts
+                // trust-model: if the key exists, use it regardless of "trust"/signature
                 ProcessBuilder pb = new ProcessBuilder(
                         "ionice", "-c", "2", "-n", "7", "nice", "-n", "10",
-                        "gpg", "--encrypt", "--batch", "yes", "--trust-model", "always",
+                        "gpg", "--encrypt", "--batch", "--yes", "--trust-model", "always",
                         "--recipient", settings.getPicKey(),
                         "--output", destFile.toString(), p.toString()
                 );
